@@ -409,6 +409,39 @@ class Embedding(RepresentationModule):
         return x
 
 
+class JointEmbedding(RepresentationModule):
+
+    def __init__(
+        self,
+        num_embeddings: int,
+        kge_embedding_dim: Optional[int] = None,
+        kge_shape: Union[None, int, Sequence[int]] = None,
+        external_embedding: Embedding = None
+        ):
+
+        shape_sum = kge_embedding_dim + external_embedding.embedding_dim
+
+        #TODO deve haver uma maneira mais elegeante de fazer isto
+        dim_sum = (kge_shape or 0) + (external_embedding or 0)
+        if dim_sum == 0:
+            dim_sum = None
+
+        _embedding_dim, shape = process_shape(shape_sum, dim_sum)
+
+        super().__init__(_embedding_dim, shape)
+
+        self._kge_embedding = torch.nn.Embedding(
+            num_embeddings=num_embeddings,
+            embedding_dim=_embedding_dim,
+        )
+
+        self._external_embedding = external_embedding
+
+        self._external_embedding.requires_grad_(False)
+
+    def forward(self, indices: Optional[torch.LongTensor]) -> torch.FloatTensor:
+        return self._kge_embedding(indices) + self._external_embedding(indices)
+
 class LiteralRepresentation(Embedding):
     """Literal representations."""
 
