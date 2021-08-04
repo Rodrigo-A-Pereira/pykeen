@@ -408,7 +408,7 @@ class Embedding(RepresentationModule):
             x = self.dropout(x)
         return x
 
-
+# Mine
 class JointEmbedding(RepresentationModule):
 
     def __init__(
