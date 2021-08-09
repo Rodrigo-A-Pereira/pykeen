@@ -267,6 +267,7 @@ class SimpleGate(Gate):
 
 
     def forward(self, x: torch.FloatTensor, literal: torch.FloatTensor) -> torch.FloatTensor:
+        """Forward of Simple Gate."""
 
         concatenated = torch.cat([x, literal], 1)
 

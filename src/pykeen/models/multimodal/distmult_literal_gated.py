@@ -1,6 +1,6 @@
 # -*- coding: utf-8 -*-
 
-"""Implementation of the DistMultLiteral model."""
+"""Implementation of the DistMultLiteralGated model."""
 
 from typing import Any, ClassVar, Mapping
 
@@ -20,9 +20,8 @@ __all__ = [
 
 class DistMultLiteralGated(LiteralModel):
     """An implementation of the LiteralE model with the Gated DistMult interaction from [kristiadi2018]_.
-
     ---
-    name:Gated DistMult Literal
+    name: Gated DistMult Literal
     citation:
         author: Kristiadi
         year: 2018
