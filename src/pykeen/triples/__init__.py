@@ -7,6 +7,7 @@ from .instances import (
 )
 from .triples_factory import CoreTriplesFactory, TriplesFactory
 from .triples_numeric_literals_factory import TriplesNumericLiteralsFactory
+from .triples_external_embedding_factory import TriplesExternalEmbeddingFactory
 
 __all__ = [
     'Instances',
@@ -18,4 +19,5 @@ __all__ = [
     'CoreTriplesFactory',
     'TriplesFactory',
     'TriplesNumericLiteralsFactory',
+    'TriplesExternalEmbeddingFactory'
 ]

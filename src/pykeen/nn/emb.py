@@ -34,6 +34,7 @@ __all__ = [
     'RepresentationModule',
     'Embedding',
     'LiteralRepresentation',
+    'ReducedLiteralRepresentation',
     'EmbeddingSpecification',
     'constrainers',
     'initializers',
@@ -183,6 +184,7 @@ class RepresentationModule(nn.Module, ABC):
             r_shape = tuple(indices.shape)
             if len(r_shape) < 2:
                 r_shape = r_shape + (1,)
+        
         return convert_to_canonical_shape(x=x, dim=dim, num=r_shape[1], batch_size=r_shape[0], suffix_shape=self.shape)
 
     @property
@@ -408,6 +410,8 @@ class Embedding(RepresentationModule):
             x = self.dropout(x)
         return x
 
+    
+
 # Mine
 class JointEmbedding(RepresentationModule):
 
@@ -462,6 +466,78 @@ class LiteralRepresentation(Embedding):
     # use this instead of a lambda to make sure that it can be pickled
     def _initialize_literals(self, _) -> torch.FloatTensor:
         return self._numeric_literals
+
+# Mine
+class ReducedLiteralRepresentation(Embedding):
+    def __init__(
+        self,
+        numeric_literals: torch.FloatTensor,
+        reduced_dim: int
+    ):
+        self._numeric_literals = numeric_literals
+        num_embeddings, embedding_dim = numeric_literals.shape
+        self.reduced_dim = reduced_dim
+        super().__init__(
+            num_embeddings=num_embeddings,
+            embedding_dim=embedding_dim,
+            initializer=self._initialize_literals,
+        )
+        self._embeddings.requires_grad_(False)
+
+        self.reduceLayer = nn.Linear(embedding_dim, self.reduced_dim)
+
+    def _initialize_literals(self, _) -> torch.FloatTensor:
+        return self._numeric_literals
+    
+
+    def forward(
+        self,
+        indices: Optional[torch.LongTensor] = None,
+    ) -> torch.FloatTensor:  # noqa: D102
+
+        if indices is None:
+            prefix_shape = (self.max_id,)
+            x = self._embeddings.weight
+        else:
+            prefix_shape = indices.shape
+            x = self._embeddings(indices)
+        
+        x = x.view(*prefix_shape, *self.shape)
+
+        # TODO
+        x = self.reduceLayer(x)
+
+        # verify that contiguity is preserved
+        assert x.is_contiguous()
+        # TODO: move normalizer / regularizer to base class?
+        if self.normalizer is not None:
+            x = self.normalizer(x)
+        if self.regularizer is not None:
+            self.regularizer.update(x)
+        if self.dropout is not None:
+            x = self.dropout(x)
+        return x
+
+    def get_in_more_canonical_shape(
+        self,
+        dim: Union[int, str],
+        indices: Optional[torch.LongTensor] = None,
+    ) -> torch.FloatTensor:
+        
+        r_shape: Tuple[int, ...]
+        if indices is None:
+            x = self(indices=indices)
+            r_shape = (1, self.max_id)
+        else:
+            flat_indices = indices.view(-1)
+            x = self(indices=flat_indices)
+            if indices.ndimension() > 1:
+                x = x.view(*indices.shape, -1)
+            r_shape = tuple(indices.shape)
+            if len(r_shape) < 2:
+                r_shape = r_shape + (1,)
+        
+        return convert_to_canonical_shape(x=x, dim=dim, num=r_shape[1], batch_size=r_shape[0], suffix_shape=self.reduced_dim)
 
 
 @dataclass

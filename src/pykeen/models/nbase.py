@@ -258,6 +258,7 @@ def _prepare_representation_module_list(
         representations = []
     if not isinstance(representations, Sequence):
         representations = [representations]
+    
     if not skip_checks and len(representations) != len(shapes):
         raise ValueError(
             f"Interaction function requires {len(shapes)} {label} representations, but "
@@ -284,6 +285,7 @@ def _prepare_representation_module_list(
             (r.shape for r in modules),
             shapes,
         ), raise_on_errors=True)
+
     return nn.ModuleList(modules)
 
 

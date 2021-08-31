@@ -17,6 +17,7 @@ __all__ = [
     'OneOrSequence',
     # Triples
     'LabeledTriples',
+    'MappedExternalEmbeddings',
     'MappedTriples',
     'EntityMapping',
     'RelationMapping',
@@ -44,6 +45,7 @@ Mutation = Callable[[X], X]
 OneOrSequence = Union[X, Sequence[X]]
 
 LabeledTriples = np.ndarray
+MappedExternalEmbeddings = np.ndarray
 MappedTriples = torch.LongTensor
 EntityMapping = Mapping[str, int]
 RelationMapping = Mapping[str, int]

@@ -2,6 +2,7 @@
 
 """Instance creation utilities."""
 
+from os import EX_CANTCREAT
 import pathlib
 from typing import Callable, Mapping, Optional, Sequence, Set, TextIO, Union
 
@@ -10,10 +11,11 @@ import pandas
 import torch
 from pkg_resources import iter_entry_points
 
-from ..typing import LabeledTriples
+from ..typing import LabeledTriples, MappedExternalEmbeddings
 
 __all__ = [
     'load_triples',
+    'load_external_embeddings',
     'get_entities',
     'get_relations',
     'tensor_to_df',
@@ -84,6 +86,37 @@ def load_triples(
             raise ValueError('remapping must have length of three')
         rv = rv[:, column_remapping]
     return rv
+
+def load_external_embeddings(
+    path: Union[str, pathlib.Path, TextIO],
+    delimiter: str = '\t',
+    emb_delimiter: str = ','
+) -> MappedExternalEmbeddings:
+    """
+    Load external embeddings saved with a delimiter between the entity and its external embedding.
+    """
+    if isinstance(path, (str, pathlib.Path)):
+        path = str(path)
+        for extenion, handler in EXTENSION_IMPORTERS.items():
+            if path.endswith(f'.{extenion}'):
+                return handler(path)
+        
+        for prefix, handler in PREFIX_IMPORTERS.items():
+            if path.startswith(f'{prefix}:'):
+                return handler(path[len(f'{prefix}:')])
+
+    
+    rv = [] 
+    with open(path) as f:
+        while line := f.readline().rstrip():
+            entity, embedding_non_splited = line.split(delimiter)
+            embedding = embedding_non_splited.split(emb_delimiter)
+            embedding.insert(0, entity)
+                        
+            rv.append(embedding)
+    
+    return np.array(rv, dtype=str)
+
 
 
 def get_entities(triples: torch.LongTensor) -> Set[int]:

@@ -24,11 +24,16 @@ class LiteralModel(ERModel[HeadRepresentation, RelationRepresentation, TailRepre
         interaction: LiteralInteraction,
         entity_representations: Sequence[Union[EmbeddingSpecification, RepresentationModule]],
         relation_representations: EmbeddingSpecificationHint = None,
+        literal_representation: EmbeddingSpecificationHint = None,
         **kwargs,
     ):
-        literal_representation = LiteralRepresentation(
-            numeric_literals=triples_factory.get_numeric_literals_tensor(),
-        )
+        if literal_representation is None:
+            literal_representation = LiteralRepresentation(
+                numeric_literals=triples_factory.get_numeric_literals_tensor(),
+            )
+        else:
+            literal_representation = literal_representation
+            
         super().__init__(
             triples_factory=triples_factory,
             interaction=interaction,

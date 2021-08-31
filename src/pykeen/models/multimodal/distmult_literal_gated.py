@@ -11,7 +11,7 @@ from ...constants import DEFAULT_DROPOUT_HPO_RANGE, DEFAULT_EMBEDDING_HPO_EMBEDD
 from ...nn.combinations import DistMultGatedCombination
 from ...nn.emb import EmbeddingSpecification
 from ...nn.modules import DistMultInteraction, LiteralInteraction
-from ...triples import TriplesNumericLiteralsFactory
+from ...triples import TriplesNumericLiteralsFactory, TriplesExternalEmbeddingFactory
 
 __all__ = [
     'DistMultLiteralGated',
@@ -38,7 +38,7 @@ class DistMultLiteralGated(LiteralModel):
 
     def __init__(
         self,
-        triples_factory: TriplesNumericLiteralsFactory,
+        triples_factory: TriplesExternalEmbeddingFactory,
         embedding_dim: int = 50,
         **kwargs,
     ) -> None:
@@ -48,7 +48,7 @@ class DistMultLiteralGated(LiteralModel):
                 base=DistMultInteraction(),
                 combination=DistMultGatedCombination(
                     entity_embedding_dim=embedding_dim,
-                    literal_embedding_dim=triples_factory.numeric_literals.shape[1],
+                    literal_embedding_dim=triples_factory.external_embeddings.shape[1],
                 ),
             ),
             entity_representations=[

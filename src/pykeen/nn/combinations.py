@@ -25,7 +25,9 @@ __all__ = [
     'DistMultCombination',
     'ComplExLiteralCombination',
     'SimpleGate',
-    'DistMultGatedCombination'
+    'ReducedGate'
+    'DistMultGatedCombination',
+    'DistMultReducedGatedCombination'
 ]
 
 
@@ -64,6 +66,9 @@ class RealGatedCombination(Combination, ABC):
 
 class Gate(nn.Module, ABC):
 
+    def __init__(self):
+        super().__init__()
+    
     @abstractmethod
     def forward(self, x: torch.FloatTensor, literal: torch.FloatTensor) -> torch.FloatTensor:
         """
@@ -73,7 +78,7 @@ class Gate(nn.Module, ABC):
         raise NotImplementedError
 
 
-class ParameterizedRealGatedCombination(RealGatedCombination, ABC):
+class ParameterizedRealGatedCombination(RealGatedCombination):
     """A gated real combination parametrized by a scoring module."""
 
     def __init__(self, gate: Gate):
@@ -254,26 +259,74 @@ class SimpleGate(Gate):
         :param literal_embedding_dim: The dimension of the literals that are concatenated
         :param activation: An optional, pre-instantiated activation module, like :class:`torch.nn.sigmoid`.
         """
+        super().__init__()
 
-        gate_activation = activation
+        self.gate_activation = activation_resolver.make(activation, activation_kwargs)
 
-        h_layer = nn.Linear(entity_embedding_dim + literal_embedding_dim, entity_embedding_dim)
+        self.h_layer = nn.Linear(entity_embedding_dim + literal_embedding_dim, entity_embedding_dim)
         
-        g_ze_layer = nn.Linear(entity_embedding_dim, entity_embedding_dim)
+        self.g_ze_layer = nn.Linear(entity_embedding_dim, entity_embedding_dim)
         
-        g_zl_layer = nn.Linear(literal_embedding_dim, entity_embedding_dim)
+        self.g_zl_layer = nn.Linear(literal_embedding_dim, entity_embedding_dim)
 
-        bias = nn.Parameter(torch.zeros(entity_embedding_dim))
+        self.bias = nn.Parameter(torch.zeros(entity_embedding_dim))
 
 
     def forward(self, x: torch.FloatTensor, literal: torch.FloatTensor) -> torch.FloatTensor:
         """Forward of Simple Gate."""
 
-        concatenated = torch.cat([x, literal], 1)
+        concatenated = torch.cat([x, literal], -1)
 
         z = self.gate_activation(self.g_ze_layer(x) + self.g_zl_layer(literal) + self.bias)
 
-        h = torch.nn.Tanh(self.h_layer(concatenated))
+        h = torch.nn.Tanh()(self.h_layer(concatenated))
+
+        return z * h + (1-z) * x
+
+
+
+class ReducedGate(Gate):
+    """A module that implements a gated linear transformation for the combination of entities and literals."""
+
+    def __init__(
+        self,
+        entity_embedding_dim: int,
+        literal_embedding_dim: int,
+        literal_embedding_reduced_dim: int,
+        activation: HintOrType[nn.Module] = None,
+        activation_kwargs: Optional[Mapping[str, Any]] = None,
+    ) -> None:
+        """Instantiate the :class:`torch.nn.Module`.
+
+        :param entity_embedding_dim: The dimension of the entity representations to which literals are concatenated
+        :param literal_embedding_dim: The dimension of the literals that are concatenated
+        :param activation: An optional, pre-instantiated activation module, like :class:`torch.nn.sigmoid`.
+        """
+        super().__init__()
+
+        self.gate_activation = activation_resolver.make(activation, activation_kwargs)
+
+        self.h_layer = nn.Linear(entity_embedding_dim + literal_embedding_reduced_dim, entity_embedding_dim)
+
+        self.g_ze_layer = nn.Linear(entity_embedding_dim, entity_embedding_dim)
+        
+        self.g_zl_layer = nn.Linear(literal_embedding_reduced_dim, entity_embedding_dim)
+
+        self.bias = nn.Parameter(torch.zeros(entity_embedding_dim))
+
+        self.reduce = nn.Linear(literal_embedding_dim, literal_embedding_reduced_dim)
+
+
+    def forward(self, x: torch.FloatTensor, literal: torch.FloatTensor) -> torch.FloatTensor:
+        """Forward of Simple Gate."""
+
+        literal = self.reduce(literal)
+
+        concatenated = torch.cat([x, literal], -1)
+
+        z = self.gate_activation(self.g_ze_layer(x) + self.g_zl_layer(literal) + self.bias)
+        
+        h = torch.nn.Tanh()(self.h_layer(concatenated))
 
         return z * h + (1-z) * x
         
@@ -296,5 +349,30 @@ class DistMultGatedCombination(ParameterizedRealGatedCombination):
         super().__init__(SimpleGate(
             entity_embedding_dim=entity_embedding_dim,
             literal_embedding_dim=literal_embedding_dim,
+            activation='sigmoid',
+        ))
+
+
+class DistMultReducedGatedCombination(ParameterizedRealGatedCombination):
+    """The gate combination used in :class:`pykeen.models.DistMultGatedLiteral`."""
+
+    # TODO Add dropout
+    def __init__(
+        self,
+        entity_embedding_dim: int,
+        literal_embedding_dim: int,
+        literal_embedding_reduced_dim: int
+    ) -> None:
+        """Instantiate the :class:`ParameterizedRealGatedCombination` with a :class:`Gate`.
+
+        :param entity_embedding_dim: The dimension of the entity representations
+        :param literal_embedding_dim: The dimension of the literals
+        """
+
+        super().__init__(ReducedGate(
+            entity_embedding_dim=entity_embedding_dim,
+            literal_embedding_dim=literal_embedding_dim,
+            literal_embedding_reduced_dim=literal_embedding_reduced_dim,
+
             activation='sigmoid',
         ))
