@@ -105,16 +105,29 @@ def load_external_embeddings(
             if path.startswith(f'{prefix}:'):
                 return handler(path[len(f'{prefix}:')])
 
-    
-    rv = [] 
-    with open(path) as f:
-        while line := f.readline().rstrip():
+    """
+    python 3.8
+     with open(path) as f:
+        while line:=f.readline().rstrip():
             entity, embedding_non_splited = line.split(delimiter)
             embedding = embedding_non_splited.split(emb_delimiter)
             embedding.insert(0, entity)
                         
             rv.append(embedding)
-    
+    """
+    rv = [] 
+    with open(path) as f:
+        while True:
+            line = f.readline()
+            if line:
+                line = line.rstrip()
+                entity, embedding_non_splited = line.split(delimiter)
+                embedding = embedding_non_splited.split(emb_delimiter)
+                embedding.insert(0, entity)
+                            
+                rv.append(embedding)
+            else:
+                break
     return np.array(rv, dtype=str)
 
 
