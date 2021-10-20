@@ -23,7 +23,9 @@ class DistMultLiteralGated(LiteralModel):
 
     This model is different from :class:`pykeen.models.DistMultLiteral` because it uses a
     gate (like found in `LSTMs <https://pytorch.org/docs/stable/generated/torch.nn.LSTM.html>`_)
-    instead of a LinearDropout module.
+    instead of a LinearDropout module. This makes it so that the module can learn which are the most relevant
+    features from the literals and make the decision to integrate said feature into the new combined embedding,
+    or simply discard it.
 
     This gate implements the full $g$ function described in the LiteralE paper (see equation 4).
     ---
