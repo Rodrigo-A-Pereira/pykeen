@@ -57,6 +57,15 @@ from torch.nn.utils import clip_grad_norm_, clip_grad_value_
 
 from ..trackers import ResultTracker
 
+from pykeen.triples.instances import SLCWAInstances
+
+import torch
+
+import torch.utils.data
+
+from tqdm.autonotebook import tqdm, trange
+
+
 __all__ = [
     "TrainingCallbackHint",
     "TrainingCallback",
@@ -180,6 +189,48 @@ class GradientAbsClippingCallback(TrainingCallback):
         clip_grad_value_(self.model.get_grad_params(), clip_value=self.clip_value)
 
 
+class ValidationCallback(TrainingCallback):
+    def __init__(self, validation_instances: SLCWAInstances, batch_size: int):
+        super().__init__()
+        self.validation_instances = validation_instances
+        self.batch_size = batch_size
+
+    @torch.inference_mode()
+    def post_epoch(self, epoch: int, epoch_loss: float, **kwargs: Any) -> None:  # noqa: D102
+        print(kwargs)
+        self.training_loop: TrainingLoop
+        self.model.eval()
+        validation_data_loader = torch.utils.data.DataLoader(
+            dataset=self.validation_instances,
+            batch_size=self.batch_size,
+            pin_memory=True,
+        )
+
+        batches = tqdm(
+            validation_data_loader,
+            desc=f"Evaluating...",
+            leave=False,
+            unit="batch",
+        )
+        
+        acc_loss = 0
+        for batch in batches:
+            batch_loss = self.training_loop._process_batch(
+                    batch=batch,
+                    start=None,
+                    stop=None,
+                )
+            
+            acc_loss+=batch_loss
+
+        loss2 = acc_loss/kwargs["num_training_instances"]
+        loss = acc_loss/len(self.validation_instances)
+
+        # Restore training mode
+        self.model.train()
+
+        print(loss, loss2)
+
 #: A hint for constructing a :class:`MultiTrainingCallback`
 TrainingCallbackHint = Union[None, TrainingCallback, Collection[TrainingCallback]]
 
@@ -225,7 +276,7 @@ class MultiTrainingCallback(TrainingCallback):
 
     def post_epoch(self, epoch: int, epoch_loss: float, **kwargs: Any) -> None:  # noqa: D102
         for callback in self.callbacks:
-            callback.post_epoch(epoch=epoch, epoch_loss=epoch_loss)
+            callback.post_epoch(epoch=epoch, epoch_loss=epoch_loss, **kwargs)
 
     def post_train(self, losses: List[float], **kwargs: Any) -> None:  # noqa: D102
         for callback in self.callbacks:

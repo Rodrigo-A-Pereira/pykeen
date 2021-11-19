@@ -27,6 +27,7 @@ from .callbacks import (
     MultiTrainingCallback,
     TrackerCallback,
     TrainingCallbackHint,
+    ValidationCallback
 )
 from ..constants import PYKEEN_CHECKPOINTS, PYKEEN_DEFAULT_CHECKPOINT
 from ..losses import Loss
@@ -203,6 +204,7 @@ class TrainingLoop(Generic[SampleType, BatchType], ABC):
         gradient_clipping_max_norm: Optional[float] = None,
         gradient_clipping_norm_type: Optional[float] = None,
         gradient_clipping_max_abs_value: Optional[float] = None,
+        validation_factory: Optional[CoreTriplesFactory] = None
     ) -> Optional[List[float]]:
         """Train the KGE model.
 
@@ -281,6 +283,9 @@ class TrainingLoop(Generic[SampleType, BatchType], ABC):
         # Create training instances. Use the _create_instances function to allow subclasses
         # to modify this behavior
         training_instances = self._create_instances(triples_factory)
+
+        validation_instances = self._create_instances(validation_factory) if validation_factory is not None else None
+
 
         # In some cases, e.g. using Optuna for HPO, the cuda cache from a previous run is not cleared
         torch.cuda.empty_cache()
@@ -367,6 +372,7 @@ class TrainingLoop(Generic[SampleType, BatchType], ABC):
                 gradient_clipping_max_abs_value=gradient_clipping_max_abs_value,
                 triples_factory=triples_factory,
                 training_instances=training_instances,
+                validation_instances=validation_instances, 
             )
 
         # Ensure the release of memory
@@ -408,6 +414,7 @@ class TrainingLoop(Generic[SampleType, BatchType], ABC):
         gradient_clipping_max_norm: Optional[float] = None,
         gradient_clipping_norm_type: Optional[float] = None,
         gradient_clipping_max_abs_value: Optional[float] = None,
+        validation_instances: Optional[Instances] = None
     ) -> Optional[List[float]]:
         """Train the KGE model, see docstring for :func:`TrainingLoop.train`."""
         if self.optimizer is None:
@@ -444,6 +451,12 @@ class TrainingLoop(Generic[SampleType, BatchType], ABC):
             )
         if gradient_clipping_max_abs_value is not None:
             callback.register_callback(GradientAbsClippingCallback(clip_value=gradient_clipping_max_abs_value))
+
+        if validation_instances is not None:
+            if not isinstance(validation_instances, SLCWAInstances):
+                raise NotImplementedError("Subgraph sampling is currently only supported for SLCWA training.")
+            else:
+                callback.register_callback(ValidationCallback(validation_instances=validation_instances, batch_size=20))
 
         callback.register_training_loop(self)
 
@@ -681,10 +694,18 @@ class TrainingLoop(Generic[SampleType, BatchType], ABC):
 
                 should_stop = False
                 if stopper is not None and stopper.should_evaluate(epoch):
-                    if stopper.should_stop(epoch):
-                        should_stop = True
+
+                    if stopper.fast_evaluation:
+                        if stopper.fast_should_stop(epoch):
+                            should_stop = True
+
+                    else:
+                        if stopper.should_stop(epoch):
+                            should_stop = True
+
                     # Since the model is also used within the stopper, its graph and cache have to be cleared
                     self._free_graph_and_cache()
+                        
                 # When the stopper obtained a new best epoch, this model has to be saved for reconstruction
                 if (
                     stopper is not None
@@ -722,7 +743,7 @@ class TrainingLoop(Generic[SampleType, BatchType], ABC):
                 raise e
 
             # Includes a call to result_tracker.log_metrics
-            callback.post_epoch(epoch=epoch, epoch_loss=epoch_loss)
+            callback.post_epoch(epoch=epoch, epoch_loss=epoch_loss, num_training_instances=num_training_instances)
 
             # If a checkpoint file is given, we check whether it is time to save a checkpoint
             if save_checkpoints and checkpoint_path is not None:
