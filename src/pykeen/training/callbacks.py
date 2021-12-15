@@ -264,11 +264,11 @@ class MultiTrainingCallback(TrainingCallback):
 
     def on_batch(self, epoch: int, batch, batch_loss: float, **kwargs: Any) -> None:  # noqa: D102
         for callback in self.callbacks:
-            callback.on_batch(epoch=epoch, batch=batch, batch_loss=batch_loss)
+            callback.on_batch(epoch=epoch, batch=batch, batch_loss=batch_loss, **kwargs)
 
     def post_batch(self, epoch: int, batch, **kwargs: Any) -> None:  # noqa: D102
         for callback in self.callbacks:
-            callback.post_batch(epoch=epoch, batch=batch)
+            callback.post_batch(epoch=epoch, batch=batch, **kwargs)
 
     def pre_step(self, **kwargs: Any) -> None:  # noqa: D102
         for callback in self.callbacks:
@@ -280,4 +280,4 @@ class MultiTrainingCallback(TrainingCallback):
 
     def post_train(self, losses: List[float], **kwargs: Any) -> None:  # noqa: D102
         for callback in self.callbacks:
-            callback.post_train(losses=losses)
+            callback.post_train(losses=losses, **kwargs)
