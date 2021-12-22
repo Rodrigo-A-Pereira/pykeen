@@ -190,14 +190,23 @@ class GradientAbsClippingCallback(TrainingCallback):
 
 
 class ValidationCallback(TrainingCallback):
-    def __init__(self, validation_instances: SLCWAInstances, batch_size: int):
+    def __init__(self, 
+                validation_instances: SLCWAInstances, 
+                batch_size: int, 
+                val_freq: int = 10, 
+                result_tracker: ResultTracker = None):
         super().__init__()
+        print("Fast validation is active")
         self.validation_instances = validation_instances
         self.batch_size = batch_size
+        self.result_tracker = result_tracker
+        self.val_freq=val_freq
 
     @torch.inference_mode()
     def post_epoch(self, epoch: int, epoch_loss: float, **kwargs: Any) -> None:  # noqa: D102
-        print(kwargs)
+        if epoch%self.val_freq!=0:
+            return
+        
         self.training_loop: TrainingLoop
         self.model.eval()
         validation_data_loader = torch.utils.data.DataLoader(
@@ -225,6 +234,10 @@ class ValidationCallback(TrainingCallback):
 
         loss2 = acc_loss/kwargs["num_training_instances"]
         loss = acc_loss/len(self.validation_instances)
+
+
+        if self.result_tracker is not None:
+            self.result_tracker.log_metrics({"val_loss": loss}, step=epoch)
 
         # Restore training mode
         self.model.train()

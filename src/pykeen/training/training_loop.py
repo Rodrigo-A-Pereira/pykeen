@@ -204,7 +204,10 @@ class TrainingLoop(Generic[SampleType, BatchType], ABC):
         gradient_clipping_max_norm: Optional[float] = None,
         gradient_clipping_norm_type: Optional[float] = None,
         gradient_clipping_max_abs_value: Optional[float] = None,
-        validation_factory: Optional[CoreTriplesFactory] = None
+        fast_validation_factory: Optional[CoreTriplesFactory] = None,
+        fast_validation_batch_size: Optional[int]=None,
+        fast_validation_freq: Optional[int]=None,
+
     ) -> Optional[List[float]]:
         """Train the KGE model.
 
@@ -283,8 +286,8 @@ class TrainingLoop(Generic[SampleType, BatchType], ABC):
         # Create training instances. Use the _create_instances function to allow subclasses
         # to modify this behavior
         training_instances = self._create_instances(triples_factory)
-
-        validation_instances = self._create_instances(validation_factory) if validation_factory is not None else None
+            
+        fast_validation_instances = self._create_instances(fast_validation_factory) if fast_validation_factory is not None else None
 
 
         # In some cases, e.g. using Optuna for HPO, the cuda cache from a previous run is not cleared
@@ -372,7 +375,11 @@ class TrainingLoop(Generic[SampleType, BatchType], ABC):
                 gradient_clipping_max_abs_value=gradient_clipping_max_abs_value,
                 triples_factory=triples_factory,
                 training_instances=training_instances,
-                validation_instances=validation_instances, 
+                fast_validation_instances=fast_validation_instances,
+                fast_validation_batch_size= fast_validation_batch_size,
+                fast_validation_freq=fast_validation_freq,
+
+
             )
 
         # Ensure the release of memory
@@ -414,7 +421,9 @@ class TrainingLoop(Generic[SampleType, BatchType], ABC):
         gradient_clipping_max_norm: Optional[float] = None,
         gradient_clipping_norm_type: Optional[float] = None,
         gradient_clipping_max_abs_value: Optional[float] = None,
-        validation_instances: Optional[Instances] = None
+        fast_validation_instances: Optional[Instances] = None,
+        fast_validation_batch_size: Optional[int]=None,
+        fast_validation_freq:  Optional[int]=None,
     ) -> Optional[List[float]]:
         """Train the KGE model, see docstring for :func:`TrainingLoop.train`."""
         if self.optimizer is None:
@@ -452,11 +461,14 @@ class TrainingLoop(Generic[SampleType, BatchType], ABC):
         if gradient_clipping_max_abs_value is not None:
             callback.register_callback(GradientAbsClippingCallback(clip_value=gradient_clipping_max_abs_value))
 
-        if validation_instances is not None:
-            if not isinstance(validation_instances, SLCWAInstances):
+        if (fast_validation_instances is not None):
+            if not isinstance(fast_validation_instances, SLCWAInstances):
                 raise NotImplementedError("Subgraph sampling is currently only supported for SLCWA training.")
             else:
-                callback.register_callback(ValidationCallback(validation_instances=validation_instances, batch_size=20))
+                callback.register_callback(ValidationCallback(validation_instances=fast_validation_instances, 
+                                                            batch_size=fast_validation_batch_size,
+                                                            val_freq=fast_validation_freq, 
+                                                            result_tracker=result_tracker))
 
         callback.register_training_loop(self)
 
@@ -694,13 +706,13 @@ class TrainingLoop(Generic[SampleType, BatchType], ABC):
 
                 should_stop = False
                 if stopper is not None and stopper.should_evaluate(epoch):
-
+                    
+                    '''
                     if stopper.fast_evaluation:
                         if stopper.fast_should_stop(epoch):
                             should_stop = True
-
-                    else:
-                        if stopper.should_stop(epoch):
+                    '''
+                    if stopper.should_stop(epoch):
                             should_stop = True
 
                     # Since the model is also used within the stopper, its graph and cache have to be cleared

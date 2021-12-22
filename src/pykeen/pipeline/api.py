@@ -799,6 +799,10 @@ def pipeline(  # noqa: C901
     evaluation_fallback: bool = False,
     filter_validation_when_testing: bool = True,
     use_tqdm: Optional[bool] = None,
+
+    fast_validation_factory: Optional[CoreTriplesFactory] = None,
+    fast_validation_batch_size: Optional[int]=None,
+    fast_validation_freq: Optional[int]=None,
 ) -> PipelineResult:
     """Train and evaluate a model.
 
@@ -1168,6 +1172,10 @@ def pipeline(  # noqa: C901
         stopper=stopper_instance,
         result_tracker=_result_tracker,
         clear_optimizer=clear_optimizer,
+
+        fast_validation_factory= fast_validation_factory,
+        fast_validation_batch_size= fast_validation_batch_size,
+        fast_validation_freq=fast_validation_freq,
         **training_kwargs,
     )
     assert losses is not None  # losses is only none if it's doing search mode
