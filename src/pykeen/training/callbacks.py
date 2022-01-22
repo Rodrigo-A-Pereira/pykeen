@@ -204,45 +204,46 @@ class ValidationCallback(TrainingCallback):
 
     @torch.inference_mode()
     def post_epoch(self, epoch: int, epoch_loss: float, **kwargs: Any) -> None:  # noqa: D102
-        if epoch%self.val_freq!=0:
-            return
-        
-        self.training_loop: TrainingLoop
-        self.model.eval()
-        validation_data_loader = torch.utils.data.DataLoader(
-            dataset=self.validation_instances,
-            batch_size=self.batch_size,
-            pin_memory=True,
-        )
 
-        batches = tqdm(
-            validation_data_loader,
-            desc=f"Evaluating...",
-            leave=False,
-            unit="batch",
-        )
-        
-        acc_loss = 0
-        for batch in batches:
-            batch_loss = self.training_loop._process_batch(
-                    batch=batch,
-                    start=None,
-                    stop=None,
-                )
+        if epoch%self.val_freq==0 or epoch==1:
+            self.training_loop: TrainingLoop
+            self.model.eval()
+            validation_data_loader = torch.utils.data.DataLoader(
+                dataset=self.validation_instances,
+                batch_size=self.batch_size,
+                pin_memory=True,
+            )
+
+            batches = tqdm(
+                validation_data_loader,
+                desc=f"Evaluating...",
+                leave=False,
+                unit="batch",
+            )
             
-            acc_loss+=batch_loss
+            acc_loss = 0
+            for batch in batches:
+                batch_loss = self.training_loop._process_batch(
+                        batch=batch,
+                        start=None,
+                        stop=None,
+                    )
+                
+                acc_loss+=batch_loss
 
-        loss2 = acc_loss/kwargs["num_training_instances"]
-        loss = acc_loss/len(self.validation_instances)
+            loss2 = acc_loss/kwargs["num_training_instances"]
+            loss = acc_loss/len(self.validation_instances)
 
 
-        if self.result_tracker is not None:
-            self.result_tracker.log_metrics({"val_loss": loss}, step=epoch)
+            if self.result_tracker is not None:
+                self.result_tracker.log_metrics({"val_loss": loss}, step=epoch)
 
-        # Restore training mode
-        self.model.train()
+            # Restore training mode
+            self.model.train()
 
-        print(loss, loss2)
+            print(loss, loss2)
+        else:
+            return
 
 #: A hint for constructing a :class:`MultiTrainingCallback`
 TrainingCallbackHint = Union[None, TrainingCallback, Collection[TrainingCallback]]
