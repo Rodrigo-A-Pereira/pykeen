@@ -7,6 +7,7 @@ from typing import Callable, Mapping, NamedTuple, Sequence, TypeVar, Union, cast
 import numpy as np
 import torch
 from class_resolver import Hint, HintOrType, HintType
+from typing_extensions import Literal
 
 __all__ = [
     # General types
@@ -66,6 +67,7 @@ DeviceHint = Hint[torch.device]
 #: A hint for a :class:`torch.Generator`
 TorchRandomHint = Union[None, int, torch.Generator]
 
+Representation = TypeVar("Representation", bound=OneOrSequence[torch.FloatTensor])
 #: A type variable for head representations used in :class:`pykeen.models.Model`,
 #: :class:`pykeen.nn.modules.Interaction`, etc.
 HeadRepresentation = TypeVar("HeadRepresentation", bound=OneOrSequence[torch.FloatTensor])
@@ -89,3 +91,6 @@ class ScorePack(NamedTuple):
 
     result: torch.LongTensor
     scores: torch.FloatTensor
+
+
+Sign = Literal[-1, 1]
