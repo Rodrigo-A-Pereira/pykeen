@@ -12,6 +12,7 @@ from typing import Optional, Union
 from uuid import uuid4
 
 import click
+import tabulate
 from more_click import verbose_option
 
 from pykeen.utils import CONFIGURATION_FILE_FORMATS, load_configuration
@@ -56,6 +57,14 @@ extra_config_option = click.option(
     default=None,
     help="Path to a file with additional configuration, e.g., to add a result tracker.",
 )
+keep_seed_option = click.option(
+    "--keep-seed",
+    is_flag=True,
+    help=(
+        "If a random seed is given in the configuration, keep it rather than discarding. "
+        "Notice that this will render multiple replicates useless."
+    ),
+)
 
 
 @click.group()
@@ -63,7 +72,13 @@ def experiments():
     """Run landmark experiments."""
 
 
-@experiments.command()
+@experiments.command(
+    epilog="Available experiments:\n\n\b\n"
+    + tabulate.tabulate(
+        sorted(path.stem.split("_") for ext in CONFIGURATION_FILE_FORMATS for path in HERE.rglob(f"*{ext}")),
+        headers=("reference", "model", "dataset"),
+    ),
+)
 @click.argument("model")
 @click.argument("reference")
 @click.argument("dataset")
@@ -73,6 +88,7 @@ def experiments():
 @directory_option
 @verbose_option
 @extra_config_option
+@keep_seed_option
 def reproduce(
     model: str,
     reference: str,
@@ -82,6 +98,7 @@ def reproduce(
     move_to_cpu: bool,
     discard_replicates: bool,
     extra_config: Optional[pathlib.Path],
+    keep_seed: bool,
 ):
     """Reproduce a pre-defined experiment included in PyKEEN.
 
@@ -103,6 +120,7 @@ def reproduce(
         save_replicates=not discard_replicates,
         file_name=file_name,
         extra_config=extra_config,
+        keep_seed=keep_seed,
     )
 
 
@@ -113,6 +131,8 @@ def reproduce(
 @discard_replicates_option
 @directory_option
 @extra_config_option
+@keep_seed_option
+@verbose_option
 def run(
     path: str,
     replicates: int,
@@ -120,6 +140,7 @@ def run(
     move_to_cpu: bool,
     discard_replicates: bool,
     extra_config: Optional[pathlib.Path],
+    keep_seed: bool,
 ):
     """Run a single reproduction experiment."""
     _help_reproduce(
@@ -129,6 +150,7 @@ def run(
         move_to_cpu=move_to_cpu,
         save_replicates=not discard_replicates,
         extra_config=extra_config,
+        keep_seed=keep_seed,
     )
 
 
@@ -141,6 +163,7 @@ def _help_reproduce(
     save_replicates: bool = True,
     file_name: Optional[str] = None,
     extra_config: Optional[pathlib.Path] = None,
+    keep_seed: bool = False,
 ) -> None:
     """Help run the configuration at a given path.
 
@@ -150,6 +173,8 @@ def _help_reproduce(
     :param move_to_cpu: Should the model be moved back to the CPU? Only relevant if training on GPU.
     :param save_replicates: Should the artifacts of the replicates be saved?
     :param file_name: Name of JSON/YAML file (optional)
+    :param keep_seed:
+        whether to keep a random seed if given as part of the configuration
     """
     from pykeen.pipeline import replicate_pipeline_from_path
 
@@ -182,6 +207,7 @@ def _help_reproduce(
         use_testing_data=True,
         move_to_cpu=move_to_cpu,
         save_replicates=save_replicates,
+        keep_seed=keep_seed,
         **extra_kwargs,
     )
     shutil.copyfile(path, output_directory.joinpath("configuration_copied").with_suffix(path.suffix))

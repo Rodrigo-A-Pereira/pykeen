@@ -203,7 +203,7 @@ from ..constants import PYKEEN_CHECKPOINTS, USER_DEFINED_CODE
 from ..datasets import get_dataset
 from ..datasets.base import Dataset
 from ..evaluation import Evaluator, MetricResults, evaluator_resolver
-from ..evaluation.rank_based_evaluator import resolve_metric_name
+from ..evaluation.metrics import MetricKey
 from ..losses import Loss, loss_resolver
 from ..lr_schedulers import LRScheduler, lr_scheduler_resolver
 from ..models import Model, make_model_cls, model_resolver
@@ -501,6 +501,7 @@ def replicate_pipeline_from_config(
     replicates: int,
     move_to_cpu: bool = False,
     save_replicates: bool = True,
+    keep_seed: bool = False,
     **kwargs,
 ) -> None:
     """Run the same pipeline several times from a configuration dictionary.
@@ -511,8 +512,11 @@ def replicate_pipeline_from_config(
     :param move_to_cpu: Should the models be moved back to the CPU? Only relevant if training on GPU.
     :param save_replicates: Should the artifacts of the replicates be saved?
     :param kwargs: Keyword arguments to be passed through to :func:`pipeline_from_config`.
+    :param keep_seed: whether to keep the random seed in a configuration
     """
-    pipeline_results = (pipeline_from_config(config, **kwargs) for _ in range(replicates))
+    # note: we do not directly forward discard_seed here, since we want to highlight the different default behaviour:
+    #    when replicating (i.e., running multiple replicates), fixing a random seed would render the replicates useless
+    pipeline_results = (pipeline_from_config(config, discard_seed=not keep_seed, **kwargs) for _ in range(replicates))
     save_pipeline_results_to_directory(
         config=config,
         directory=directory,
@@ -524,8 +528,9 @@ def replicate_pipeline_from_config(
 
 def _iterate_moved(pipeline_results: Iterable[PipelineResult]):
     for pipeline_result in pipeline_results:
-        pipeline_result.model.device = resolve_device("cpu")
-        pipeline_result.model.to_device_()
+        # note: torch.nn.Module.cpu() is in-place in contrast to torch.Tensor.cpu()
+        pipeline_result.model.cpu()
+        torch.cuda.empty_cache()
         yield pipeline_result
 
 
@@ -544,7 +549,7 @@ class _ResultAccumulator:
         """Add an "original" result, i.e., one stored in the reproducibility configuration."""
         # normalize keys
         # TODO: this can only normalize rank-based metrics!
-        result = {str(resolve_metric_name(k)): v for k, v in flatten_dictionary(result).items()}
+        result = {MetricKey.normalize(k): v for k, v in flatten_dictionary(result).items()}
         self.keys = sorted(result.keys())
         self.data.append([True] + [result[k] for k in self.keys])
 
@@ -691,6 +696,7 @@ def pipeline_from_path(
 
 def pipeline_from_config(
     config: Mapping[str, Any],
+    discard_seed: bool = False,
     **kwargs,
 ) -> PipelineResult:
     """Run the pipeline with a configuration dictionary.
@@ -698,6 +704,8 @@ def pipeline_from_config(
     :param config: The experiment configuration dictionary. Should have a 'metadata' and 'pipeline'
         key. The metadata entry is passed to the metadata argument of :func:`pipeline`. The 'pipeline'
         entry is passed via splat to :func:`pipeline`.
+    :param discard_seed:
+        whether to discard the random seed for the pipeline, if present.
     :param kwargs: Additional kwargs to forward to :func:`pipeline`.
     :return: The results of running the pipeline on the given configuration.
     """
@@ -705,6 +713,9 @@ def pipeline_from_config(
     title = metadata.get("title")
     if title is not None:
         logger.info(f"Running: {title}")
+    if discard_seed and "random_seed" in pipeline_kwargs:
+        random_seed = pipeline_kwargs.pop("random_seed")
+        logger.info(f"Ignoring random_seed={random_seed}. You need to explicitly disable this, if unintended.")
 
     return pipeline(
         metadata=metadata,
@@ -741,7 +752,6 @@ def _build_model_helper(
     if model_kwargs is None:
         model_kwargs = {}
     model_kwargs = dict(model_kwargs)
-    model_kwargs.update(preferred_device=_device)
     model_kwargs.setdefault("random_seed", _random_seed)
 
     if regularizer is not None:
@@ -1003,6 +1013,7 @@ def pipeline(  # noqa: C901
     _result_tracker.start_run(run_name=title)
 
     _device: torch.device = resolve_device(device)
+    logger.info(f"Using device: {device}")
 
     dataset_instance: Dataset = get_dataset(
         dataset=dataset,
@@ -1072,12 +1083,28 @@ def pipeline(  # noqa: C901
             training_triples_factory=training,
         )
 
+    model_instance = model_instance.to(_device)
+
     # Log model parameters
     _result_tracker.log_params(
         params=dict(
             model=model_instance.__class__.__name__,
             model_kwargs=model_kwargs,
         ),
+    )
+
+    # Log loss parameters
+    _result_tracker.log_params(
+        params=dict(
+            # the loss was already logged as part of the model kwargs
+            # loss=loss_resolver.normalize_inst(model_instance.loss),
+            loss_kwargs=loss_kwargs
+        ),
+    )
+
+    # Log regularizer parameters
+    _result_tracker.log_params(
+        params=dict(regularizer_kwargs=regularizer_kwargs),
     )
 
     optimizer_kwargs = dict(optimizer_kwargs or {})
@@ -1137,6 +1164,7 @@ def pipeline(  # noqa: C901
         triples_factory=training,
         optimizer=optimizer_instance,
         lr_scheduler=lr_scheduler_instance,
+        result_tracker=_result_tracker,
         **training_loop_kwargs,
     )
     _result_tracker.log_params(
@@ -1204,7 +1232,6 @@ def pipeline(  # noqa: C901
     losses = training_loop_instance.train(
         triples_factory=training,
         stopper=stopper_instance,
-        result_tracker=_result_tracker,
         clear_optimizer=clear_optimizer,
 
         fast_validation_factory= fast_validation_factory,

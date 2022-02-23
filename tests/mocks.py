@@ -8,9 +8,8 @@ import torch
 from torch import nn
 
 from pykeen.evaluation import Evaluator, MetricResults, RankBasedMetricResults
-from pykeen.evaluation.rank_based_evaluator import RANK_REALISTIC, RANK_TYPES, SIDES
 from pykeen.nn.emb import RepresentationModule
-from pykeen.typing import MappedTriples
+from pykeen.typing import RANK_REALISTIC, RANK_TYPES, SIDES, MappedTriples, Target
 
 __all__ = [
     "CustomRepresentations",
@@ -37,18 +36,10 @@ class MockEvaluator(Evaluator):
         self.losses = tuple(losses)
         self.losses_iter = iter(self.losses)
 
-    def process_tail_scores_(
+    def process_scores_(
         self,
         hrt_batch: MappedTriples,
-        true_scores: torch.FloatTensor,
-        scores: torch.FloatTensor,
-        dense_positive_mask: Optional[torch.FloatTensor] = None,
-    ) -> None:  # noqa: D102
-        pass
-
-    def process_head_scores_(
-        self,
-        hrt_batch: MappedTriples,
+        target: Target,
         true_scores: torch.FloatTensor,
         scores: torch.FloatTensor,
         dense_positive_mask: Optional[torch.FloatTensor] = None,
@@ -59,7 +50,7 @@ class MockEvaluator(Evaluator):
         hits = next(self.losses_iter)
         dummy_1 = {side: {rank_type: 10.0 for rank_type in RANK_TYPES} for side in SIDES}
         dummy_2 = {side: {rank_type: 1.0 for rank_type in RANK_TYPES} for side in SIDES}
-        return RankBasedMetricResults(
+        return RankBasedMetricResults.from_dict(
             arithmetic_mean_rank=dummy_1,
             geometric_mean_rank=dummy_1,
             harmonic_mean_rank=dummy_1,

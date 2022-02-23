@@ -51,7 +51,7 @@ class SLCWATrainingLoop(TrainingLoop[SLCWASampleType, SLCWABatchType]):
             query=negative_sampler,
             pos_kwargs=negative_sampler_kwargs,
             triples_factory=triples_factory,
-        )
+        ).to(self.device)
 
     def _create_instances(self, triples_factory: CoreTriplesFactory) -> Instances:  # noqa: D102
         return triples_factory.create_slcwa_instances()
@@ -91,8 +91,8 @@ class SLCWATrainingLoop(TrainingLoop[SLCWASampleType, SLCWABatchType]):
         negative_batch = negative_batch.to(self.device)
 
         # Compute negative and positive scores
-        positive_scores = self.model.score_hrt(positive_batch)
-        negative_scores = self.model.score_hrt(negative_batch).view(*negative_score_shape)
+        positive_scores = self.model.score_hrt(positive_batch, mode=self.mode)
+        negative_scores = self.model.score_hrt(negative_batch, mode=self.mode).view(*negative_score_shape)
 
         return (
             self.loss.process_slcwa_scores(
@@ -100,7 +100,7 @@ class SLCWATrainingLoop(TrainingLoop[SLCWASampleType, SLCWABatchType]):
                 negative_scores=negative_scores,
                 label_smoothing=label_smoothing,
                 batch_filter=positive_filter,
-                num_entities=self.model.num_entities,
+                num_entities=self.model._get_entity_len(mode=self.mode),
             )
             + self.model.collect_regularization_term()
         )
