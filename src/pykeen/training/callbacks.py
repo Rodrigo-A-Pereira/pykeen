@@ -66,6 +66,15 @@ from ..trackers import ResultTracker
 from ..triples import CoreTriplesFactory
 from ..typing import MappedTriples, OneOrSequence
 
+from pykeen.triples.instances import SLCWAInstances
+
+import torch
+
+import torch.utils.data
+
+from tqdm.autonotebook import tqdm, trange
+
+
 __all__ = [
     "TrainingCallbackHint",
     "TrainingCallback",
@@ -306,7 +315,64 @@ class StopperTrainingCallback(TrainingCallback):
 callback_resolver: ClassResolver[TrainingCallback] = ClassResolver.from_subclasses(
     base=TrainingCallback,
 )
+ 
+ 
+class ValidationCallback(TrainingCallback):
+    def __init__(self, 
+                validation_instances: SLCWAInstances, 
+                batch_size: int, 
+                val_freq: int = 10, 
+                result_tracker: ResultTracker = None):
+        super().__init__()
+        print("Fast validation is active")
+        self.validation_instances = validation_instances
+        self.batch_size = batch_size
+        self.result_tracker = result_tracker
+        self.val_freq=val_freq
 
+    @torch.inference_mode()
+    def post_epoch(self, epoch: int, epoch_loss: float, **kwargs: Any) -> None:  # noqa: D102
+
+        if epoch%self.val_freq==0 or epoch==1:
+            self.training_loop: TrainingLoop
+            self.model.eval()
+            validation_data_loader = torch.utils.data.DataLoader(
+                dataset=self.validation_instances,
+                batch_size=self.batch_size,
+                pin_memory=True,
+            )
+
+            batches = tqdm(
+                validation_data_loader,
+                desc=f"Evaluating...",
+                leave=False,
+                unit="batch",
+            )
+            
+            acc_loss = 0
+            for batch in batches:
+                batch_loss = self.training_loop._process_batch(
+                        batch=batch,
+                        start=None,
+                        stop=None,
+                    )
+                
+                acc_loss+=batch_loss
+
+            loss2 = acc_loss/kwargs["num_training_instances"]
+            loss = acc_loss/len(self.validation_instances)
+
+
+            if self.result_tracker is not None:
+                self.result_tracker.log_metrics({"val_loss": loss}, step=epoch)
+
+            # Restore training mode
+            self.model.train()
+
+            print(loss, loss2)
+        else:
+            return
+  
 #: A hint for constructing a :class:`MultiTrainingCallback`
 TrainingCallbackHint = OneOrSequence[HintOrType[TrainingCallback]]
 TrainingCallbackKwargsHint = OneOrSequence[OptionalKwargs]

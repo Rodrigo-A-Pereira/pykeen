@@ -29,6 +29,7 @@ from .callbacks import (
     TrackerTrainingCallback,
     TrainingCallbackHint,
     TrainingCallbackKwargsHint,
+    ValidationCallback
 )
 from ..constants import PYKEEN_CHECKPOINTS, PYKEEN_DEFAULT_CHECKPOINT
 from ..lr_schedulers import LRScheduler
@@ -201,6 +202,9 @@ class TrainingLoop(Generic[SampleType, BatchType], ABC):
         gradient_clipping_norm_type: Optional[float] = None,
         gradient_clipping_max_abs_value: Optional[float] = None,
         pin_memory: bool = True,
+        fast_validation_factory: Optional[CoreTriplesFactory] = None,
+        fast_validation_batch_size: Optional[int]=None,
+        fast_validation_freq: Optional[int]=None,
     ) -> Optional[List[float]]:
         """Train the KGE model.
 
@@ -284,6 +288,9 @@ class TrainingLoop(Generic[SampleType, BatchType], ABC):
         # Create training instances. Use the _create_instances function to allow subclasses
         # to modify this behavior
         training_instances = self._create_instances(triples_factory)
+            
+        fast_validation_instances = self._create_instances(fast_validation_factory) if fast_validation_factory is not None else None
+
 
         # In some cases, e.g. using Optuna for HPO, the cuda cache from a previous run is not cleared
         torch.cuda.empty_cache()
@@ -373,6 +380,9 @@ class TrainingLoop(Generic[SampleType, BatchType], ABC):
                 triples_factory=triples_factory,
                 training_instances=training_instances,
                 pin_memory=pin_memory,
+                fast_validation_instances=fast_validation_instances,
+                fast_validation_batch_size= fast_validation_batch_size,
+                fast_validation_freq=fast_validation_freq,
             )
 
         # Ensure the release of memory
@@ -415,6 +425,10 @@ class TrainingLoop(Generic[SampleType, BatchType], ABC):
         gradient_clipping_norm_type: Optional[float] = None,
         gradient_clipping_max_abs_value: Optional[float] = None,
         pin_memory: bool = True,
+
+        fast_validation_instances: Optional[Instances] = None,
+        fast_validation_batch_size: Optional[int]=None,
+        fast_validation_freq:  Optional[int]=None,
     ) -> Optional[List[float]]:
         """Train the KGE model, see docstring for :func:`TrainingLoop.train`."""
         if self.optimizer is None:
@@ -462,6 +476,15 @@ class TrainingLoop(Generic[SampleType, BatchType], ABC):
             )
         if gradient_clipping_max_abs_value is not None:
             callback.register_callback(GradientAbsClippingTrainingCallback(clip_value=gradient_clipping_max_abs_value))
+
+        if (fast_validation_instances is not None):
+            if not isinstance(fast_validation_instances, SLCWAInstances):
+                raise NotImplementedError("Subgraph sampling is currently only supported for SLCWA training.")
+            else:
+                callback.register_callback(ValidationCallback(validation_instances=fast_validation_instances, 
+                                                            batch_size=fast_validation_batch_size,
+                                                            val_freq=fast_validation_freq, 
+                                                            result_tracker=result_tracker))
 
         callback.register_training_loop(self)
 
@@ -700,6 +723,29 @@ class TrainingLoop(Generic[SampleType, BatchType], ABC):
                 # Save the last successful finished epoch
                 self._epoch = epoch
 
+
+                should_stop = False
+                if stopper is not None and stopper.should_evaluate(epoch):
+                    
+                    '''
+                    if stopper.fast_evaluation:
+                        if stopper.fast_should_stop(epoch):
+                            should_stop = True
+                    '''
+                    if stopper.should_stop(epoch):
+                            should_stop = True
+
+                    # Since the model is also used within the stopper, its graph and cache have to be cleared
+                    self._free_graph_and_cache()
+                        
+                # When the stopper obtained a new best epoch, this model has to be saved for reconstruction
+                if (
+                    stopper is not None
+                    and stopper.best_epoch != last_best_epoch
+                    and best_epoch_model_file_path is not None
+                ):
+                    self._save_state(path=best_epoch_model_file_path, triples_factory=triples_factory)
+                    last_best_epoch = epoch
             # When the training loop failed, a fallback checkpoint is created to resume training.
             except (MemoryError, RuntimeError) as e:
                 # During automatic memory optimization only the error message is of interest
@@ -729,7 +775,7 @@ class TrainingLoop(Generic[SampleType, BatchType], ABC):
                 raise e
 
             # Includes a call to result_tracker.log_metrics
-            callback.post_epoch(epoch=epoch, epoch_loss=epoch_loss)
+            callback.post_epoch(epoch=epoch, epoch_loss=epoch_loss, num_training_instances=num_training_instances)
 
             # If a checkpoint file is given, we check whether it is time to save a checkpoint
             if save_checkpoints and checkpoint_path is not None:

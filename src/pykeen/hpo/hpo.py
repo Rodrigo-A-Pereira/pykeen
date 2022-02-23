@@ -117,6 +117,11 @@ class Objective:
     # Misc.
     device: Union[None, str, torch.device] = None
     save_model_directory: Optional[str] = None
+    random_seed: Optional[int] = None
+
+    fast_validation_factory: Optional[CoreTriplesFactory] = None
+    fast_validation_batch_size: Optional[int]=None
+    fast_validation_freq: Optional[int]=None
 
     @staticmethod
     def _update_stopper_callbacks(
@@ -295,6 +300,11 @@ class Objective:
                 # Misc.
                 use_testing_data=False,  # use validation set during HPO!
                 device=self.device,
+                random_seed=self.random_seed,
+                fast_validation_factory= self.fast_validation_factory,
+                fast_validation_batch_size= self.fast_validation_batch_size,
+                fast_validation_freq=self.fast_validation_freq 
+
             )
         except (MemoryError, RuntimeError) as e:
             # close run in result tracker
@@ -533,6 +543,11 @@ def hpo_pipeline(
     result_tracker_kwargs: Optional[Mapping[str, Any]] = None,
     # 6. Misc
     device: Hint[torch.device] = None,
+    random_seed: Optional[int] = None, 
+
+    fast_validation_factory: Optional[CoreTriplesFactory] = None,
+    fast_validation_batch_size: Optional[int]=None,
+    fast_validation_freq: Optional[int]=None,
     #  Optuna Study Settings
     storage: Hint[BaseStorage] = None,
     sampler: HintType[BaseSampler] = None,
@@ -806,6 +821,11 @@ def hpo_pipeline(
         save_model_directory=save_model_directory,
         # Pipeline Misc.
         device=device,
+        random_seed=random_seed,
+
+        fast_validation_factory= fast_validation_factory,
+        fast_validation_batch_size= fast_validation_batch_size,
+        fast_validation_freq=fast_validation_freq,
     )
 
     # Invoke optimization of the objective function.
